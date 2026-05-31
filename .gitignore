@@ -34,5 +34,7 @@ canvas_session.json
 .DS_Store
 Thumbs.db
 
-# Internal docs (not for public)
+# Internal docs and agent config (not for public)
 docs/
+AGENTS.md
+.claude/
