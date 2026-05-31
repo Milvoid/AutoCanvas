@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data and logs
+data/
+logs/
+transcripts/
+*.log
+
+# Session files
+canvas_session.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Internal docs (not for public)
+docs/
