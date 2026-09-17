@@ -1,0 +1,20 @@
+root = "runtime"
+host = "127.0.0.1"
+port = 8080
+# Empty means all active Canvas courses. Restrict to chosen course IDs if desired.
+course_ids = []
+auto_asr = true
+auto_slides = true
+auto_live = true
+course_interval = 604800
+sync_interval = 3600
+schedule_interval = 60
+live_lead_seconds = 600
+# Drop oldest queued audio and record a gap if inference cannot keep up.
+live_queue_chunks = 100
+model = "Qwen/Qwen3-ASR-0.6B"
+device = "mps"
+chunk_seconds = 3.0
+sample_every = 5.0
+keywords = ["签到", "点名", "名字"]
+keyword_debounce = 30

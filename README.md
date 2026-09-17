@@ -1,631 +1,115 @@
-# AutoCanvas Gateway
+# AutoCanvas V2
 
-AutoCanvas Gateway 是一个基于 Python 的异步任务调度系统，专为自动化 Canvas LMS 视频处理而设计。它能够自动监控直播课程、转录点播视频，并提供灵活的插件系统用于功能扩展。
+新版 Canvas 视频接入、独立本地转写与 Slides 抽取，以及外层自动化控制。
 
-## 功能特性
+登录鉴权、Canvas 数据查询、视频地址解析、媒体读取、ASR、Slides 各自独立。没有插件加载、Gateway 或 Job 注册机制。ASR 不知道视频 URL，Slides 不知道课程 ID，功能模块不访问执行数据库。
 
-- **全自动直播监控**: 自动检测即将开始的直播，提前10分钟启动监听
-- **智能语音识别**: 基于 Qwen3-ASR 0.6B 模型的实时语音转文字
-- **关键词告警**: 实时检测 "签到"、"点名"、"名字" 等关键词
-- **VOD 回放转录**: 自动或手动处理课程回放视频
-- **灵活的 Job 调度系统**: 支持周期性、定时、排队等多种任务类型
-- **动态插件系统**: 无需重启即可上传和运行自定义插件
-- **完整的 HTTP API**: 提供 RESTful 接口管理所有功能
+## 环境与启动
 
-## 项目结构
+Python 3.11+，系统需要 `ffmpeg` 和 `ffprobe`。本机沿用 `auto-canvas` conda 环境；模型从本地 Hugging Face 缓存读取，不自动下载。
 
-```
-AutoCanvas/
-├── gateway.py              # 核心 Gateway 类，异步调度器
-├── start_gateway.py        # 服务启动入口
-├── config.py               # 配置文件（直播监听参数）
-│
-├── jobs/                   # Job 调度层
-│   ├── __init__.py
-│   ├── job_manager.py      # JobRegistry 基础管理
-│   ├── builtin_jobs.py     # 内置任务（课程同步、直播扫描、调度执行）
-│   ├── schedule_manager.py # Schedule 管理
-│   ├── auto_scheduler.py   # 自动化调度器
-│   └── video_gateway_jobs.py # 视频相关 Job 注册
-│
-├── workers/                # 工作层
-│   ├── __init__.py
-│   ├── live_worker.py      # 直播监听处理
-│   ├── replay_worker.py    # VOD 转写处理
-│   └── video_manager.py    # 视频状态管理
-│
-├── api/                    # API 层
-│   ├── __init__.py
-│   ├── video_api.py        # HTTP API 服务
-│   └── canvas_video.py     # Canvas API 封装
-│
-├── utils/                  # 工具层
-│   ├── __init__.py
-│   ├── canvas_auth.py      # Canvas 认证与 Session 管理
-│   └── course_data.py      # 课程数据管理
-│
-├── plugins/                # 插件目录
-│   └── example_homework_check.py  # 示例插件
-│
-├── data/                   # 数据持久化（自动创建）
-│   ├── jobs_state.json     # Job 状态
-│   ├── video_state.json    # 视频元数据
-│   ├── schedules.json      # 调度记录
-│   ├── timetable.json      # 课程表
-│   └── stream_labels.json  # 流类型缓存
-│
-├── transcript/             # 转写输出目录（自动创建）
-├── logs/                   # 日志目录（自动创建）
-│   └── gateway.log         # 主日志文件
-│
-├── docs/                   # 文档目录
-│   ├── qwen3-asr-model-card.md
-│   └── jaccount-login-pipeline.md
-│
-├── TODO.md                 # 开发任务清单
-├── ARCHITECTURE.md         # 架构设计文档
-└── README.md               # 本文档
-```
-
-## 系统架构
-
-### 核心架构 (Foundation Layer)
-
-![AutoCanvas 架构](images/AutoCanvasIntro.drawio.png)
-
-**组件说明：**
-
-| 层级 | 组件 | 功能 |
-|------|------|------|
-| Foundation | JobRegistry | 任务注册中心，管理所有 Job |
-| Job 类型 | BasicJob | 单次执行或长期驻留 |
-| | LoopJob | 周期性执行（如每30分钟） |
-| | QueuedJob | 排队执行，并发控制 |
-| | PluginJob | 动态加载 Python 脚本 |
-| 应用层 | Built-in Jobs | course_sync, live_monitor, vod_process |
-| | User Plugins | 用户自定义插件 |
-| | Dynamic API | RESTful 接口管理所有功能 |
-
-### 完整数据流
-
-```
-Gateway (AutoCanvasGateway)
-├─ Loop 层: 周期性任务 (auto_scheduler.py)
-│   └─ 每周同步课程表 (update_timetable, 7天间隔)
-│   └─ 每小时扫描直播 (scan_live, 1小时间隔)
-│   └─ 每分钟执行调度 (schedule_executor, 1分钟间隔)
-│
-├─ Schedule 层: 精确时间触发 (schedule_manager.py)
-│   └─ monitor_start: 课前10分钟触发，启动直播监听
-│   └─ monitor_end: 课程结束触发，停止监听并整理
-│
-├─ Queue 层: 待处理队列 (video_manager.py)
-│   └─ VOD Queue: 待转写/处理中/已完成/跳过
-│   └─ Live Queue: 直播监听状态
-│
-└─ Job 层: 正在执行的任务 (gateway.py)
-    └─ 直播监听 Job (长驻，支持断线重连)
-    └─ VOD 转写 Job (一次性)
-    └─ API Server Job (常驻)
-```
-
-### 全自动工作流程
-
-```
-1. Gateway 启动
-   └─ Session 初始化（Canvas 认证）
-   └─ JobRegistry 初始化
-   └─ 注册内置 Job（update_timetable, scan_live, schedule_executor）
-   └─ 启动 API Server
-
-2. 每周执行（Loop 层 - update_timetable）
-   └─ 同步 Canvas 课程表
-   └─ 存储到 data/timetable.json
-
-3. 每小时执行（Loop 层 - scan_live）
-   └─ 获取所有课程的直播列表
-   └─ 筛选未来 24h 内的直播
-   └─ 为每个直播注册 Schedule:
-       ├─ monitor_start: 课前10分钟触发
-       └─ monitor_end: 课程结束触发
-
-4. 每分钟执行（Loop 层 - schedule_executor）
-   └─ 检查待触发的 Schedule
-   └─ monitor_start 触发:
-       └─ 启动 live_monitor Job（QueuedJob）
-           └─ ffmpeg 拉流 → ASR 识别 → 关键词检测
-           └─ 输出到 transcript/xxx-stream.txt
-   └─ monitor_end 触发:
-       └─ 停止对应的 live_monitor Job
-       └─ 扫描该课程的新回放
-
-5. VOD 处理（手动或自动）
-   └─ 通过 API 手动触发，或自动加入队列
-   └─ VOD 转写 Job（QueuedJob，避免并发冲突）
-       └─ 音频感知选流 → ffmpeg 拉流 → ASR 识别
-       └─ 输出到 transcript/xxx-replay.txt
-```
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.10+
-- Conda 或虚拟环境
-- FFmpeg（系统路径可访问）
-- macOS / Linux（推荐）
-
-### 安装依赖
-
-```bash
-# 创建 conda 环境
-conda create -n auto-canvas python=3.12
+```sh
 conda activate auto-canvas
-
-# 安装 Python 依赖
-pip install qwen-asr torch requests numpy aiohttp
+cd /path/to/AutoCanvas
+python -m autocanvas --help
 ```
 
-### 配置
+安装到其他环境：`python -m pip install -e '.[asr,slides]'`。仅登录、查询与 HTTP 功能可以只安装基础依赖；ASR 和 Slides 的重依赖延迟加载。
 
-编辑 `config.py`：
-
-```python
-# 登录配置（可选，首次运行会提示登录）
-DEFAULT_USERNAME = "your_email@sjtu.edu.cn"
-
-# Live 直播监听配置
-LIVE_CONFIG = {
-    "keywords": ["签到", "点名", "名字"],    # 关键词检测
-    "silence_threshold": 0.005,               # 静音阈值
-    "chunk_seconds": 3,                       # 音频切片长度
-    "sample_rate": 16000,                     # 采样率
-    "keyword_debounce_seconds": 30,           # 关键词去抖动
-}
+```sh
+# 首次创建私有 runtime；已有 runtime 不需要重新初始化。
+python -m autocanvas init
+# 可在首次 init 时附加 --import-session /path/to/canvas_session.json
+python -m autocanvas login
+python -m autocanvas sync --assignments
+python -m autocanvas serve
 ```
 
-### 启动服务
+已有登录会话时无需重复登录。服务默认绑定 `127.0.0.1:8080`。前台运行时 Ctrl+C 清理媒体子进程、保存进度；需要后台驻留可用 `tmux new -s auto-canvas-v2 'conda run --no-capture-output -n auto-canvas python -m autocanvas serve'`。
 
-```bash
-conda activate auto-canvas
-python start_gateway.py
+配置：复制 `config.example.toml` 为本地 `config.toml`，运行 `python -m autocanvas --config config.toml serve`。也可用全局 `--root /private/path` 指定独立运行数据。`config.toml` 与 `runtime/` 都不进入版本管理。
+
+## 独立命令
+
+以下课程 ID `12345` 和课次 ID `67890` 均为示例，请替换为自己账号查询到的 ID。
+
+```sh
+# 同步当前课程和视频；没有新版教学班映射的课程会明确显示 video_unavailable。
+python -m autocanvas sync
+python -m autocanvas sync --course 12345
+python -m autocanvas assignments 12345
+python -m autocanvas list courses
+python -m autocanvas list lectures
+python -m autocanvas list executions
+
+# 查询来源编号，默认不输出私人播放地址。
+python -m autocanvas sources 12345 67890
+# 确实需要地址时显式附加 --show-urls。
+
+# 不依赖 Canvas 登录、数据库或服务的本地处理。
+python -m autocanvas transcribe /path/to/audio.wav --output /path/to/transcript
+python -m autocanvas slides /path/to/video.mp4 --output /path/to/slides
+
+# 同一课次的 ASR 和 Slides 独立记录结果。
+python -m autocanvas process 12345 67890 --kind both
+python -m autocanvas process 12345 67890 --kind vod_asr
+python -m autocanvas process 12345 67890 --kind vod_slides --view 5
+python -m autocanvas process 12345 67890 --kind vod_asr --retry
+
+# 短片段验证写入 samples，不会把完整课次标为已完成。
+python -m autocanvas process 12345 67890 --duration 30
 ```
 
-服务启动后：
-- API 监听 `http://0.0.0.0:8080`
-- 日志输出到 `logs/gateway.log`
+`--view` 显式覆盖选流。默认 ASR 选择有声来源；Slides 优先分辨率，再使用较低码率作为静态屏幕的启发式。不会硬编码 view 1/5 的含义。
 
-### 验证运行
+操作同一 runtime 的服务和处理 CLI 使用进程锁，防止双重模型加载与执行。服务运行时使用 HTTP 提交请求。纯本地处理无需常驻服务。
 
-```bash
-# 健康检查
-curl http://localhost:8080/health
+## 自动化与直播
 
-# 查看所有 Job
-curl http://localhost:8080/jobs
+服务启动后同步课程、视频、作业；课表默认每周更新，视频与作业每小时更新，调度每分钟检查。新回放默认自动转写、抽取 Slides，二者独立排队、独立重试。单个课程没有录播映射不影响其作业同步或其他课程。
 
-# 查看课程视频列表
-curl "http://localhost:8080/videos?course_id=YOUR_COURSE_ID"
+直播课次到开始前十分钟时创建一个独立监听协程。协程获取最新地址、启动 ffmpeg、持续接收音频，将音频放入有界队列交给 ASR，保存转写并检测关键词。断流后重新获取地址并连接；未开播持续重试至课程结束。队列满时丢弃最老待识别块并记录音频缺口。ASR 单实例串行执行，直播块优先于待处理回放块，正在推理的块不会被强行中断。
+
+到结束时间停止拉流并消化已收音频。手动停止或服务退出时最多额外等待 30 秒消化队列，未处理部分记录为缺口。ffmpeg 始终回收。直播结束安排回放检查，回放生成延迟由后续小时同步补齐。
+
+重启后，中断执行恢复为待处理；回放从已保存音频时间位置继续，Slides 重新生成后替换结果。仍在上课的直播重新连接，已结束的监听记录标为 expired 并触发回放同步。显式取消不会被周期同步重新启动，需显式重试。
+
+自动化暂停只停止新的自动派发，正在执行的任务继续；取消正在执行的任务需使用取消接口。人工请求可在暂停期间执行。
+
+直播目前按官方前端 `liveDay=0` 查询可见课次；真实直播流仍需在有正在直播的课程时验收。不能据此保证尚未被平台返回的未来课次会提前十分钟发现。接口与限制详见 [验证记录](docs/validation.md)。
+
+## HTTP
+
+所有 `/api` 端点都是明确功能入口；耗时请求返回 `202` 和 `execution_id`。
+
+| 方法与路径 | 功能 |
+| --- | --- |
+| `GET /health` | 服务、鉴权阻塞、后台循环健康状态 |
+| `GET /api/courses`、`/api/lectures`、`/api/assignments`、`/api/sync` | 已同步的数据与同步状态，可用 `?course_id=` 过滤 |
+| `POST /api/sync` | 同步全部或 `{"course_id":"12345"}` 指定课程，并安排作业同步 |
+| `POST /api/process/vod_asr`、`vod_slides`、`live` | 输入 course_id、lecture_id，可选 view、retry |
+| `GET /api/executions`、`/api/executions/{id}` | 查看结果、错误类型、产物位置 |
+| `POST /api/executions/{id}/cancel`、`retry` | 取消、重试 |
+| `GET/POST /api/automation` | 查看或设置 `{"paused":true}` |
+| `GET/PATCH /api/courses/{id}/rules` | 按课程覆盖 `asr`、`slides`、`live` 开关 |
+
+```sh
+curl http://127.0.0.1:8080/health
+curl -X POST http://127.0.0.1:8080/api/process/vod_slides \
+  -H 'Content-Type: application/json' \
+  -d '{"course_id":"12345","lecture_id":"67890"}'
 ```
 
-## API 文档
+不存在上传代码、动态注册任务或操作模型内部状态的接口。重新登录后可对 `needs_login` 执行调用 retry；常驻进程不会等待交互式密码或验证码。
 
-### 系统管理
+## 数据与验证
 
-#### 健康检查
-```bash
-GET /health
+`runtime/state.sqlite3` 是唯一执行状态库；`auth/` 保存私有会话，`assignments/` 保存作业，`outputs/<course>/<lecture>/` 保存转写和 Slides，`cache/` 保存中间画面，`logs/` 保存轮转服务日志。完整媒体地址和令牌不写入数据库、转写头或日志。
+
+转写有断点 JSONL、最终 JSON 和 TXT；Slides 有图片、时间清单与联系表；直播有连接、缺口、关键词事件 JSONL。日志与产物含个人课程数据，保留在个人目录。发布时仅包含源码、测试、文档和配置模板，不包含个人运行数据。
+
+```sh
+python -m unittest discover -s tests -v
 ```
 
-响应：
-```json
-{
-  "success": true,
-  "started_at": "2026-04-03T10:00:00",
-  "last_heartbeat": "2026-04-03T10:05:00",
-  "jobs_count": 5
-}
-```
-
-### Job 管理
-
-#### 列出所有 Job
-```bash
-GET /jobs?type=loop
-```
-
-Query 参数：
-- `type` (可选): `basic`, `loop`, `scheduled`, `queued`
-
-#### 获取 Job 详情
-```bash
-GET /jobs/{name}
-```
-
-#### 更新 Job 配置
-```bash
-PATCH /jobs/{name}
-Content-Type: application/json
-
-{
-  "enabled": true,
-  "interval": 3600,
-  "retries": 3,
-  "retry_delay": 5.0
-}
-```
-
-#### 暂停/恢复 Job
-```bash
-POST /jobs/{name}/pause
-POST /jobs/{name}/resume
-```
-
-#### 启动 Job
-```bash
-POST /jobs/{name}/start
-```
-
-#### 删除 Job
-```bash
-DELETE /jobs/{name}
-```
-
-### Canvas 视频操作
-
-#### 获取课程视频列表
-```bash
-GET /videos?course_id=YOUR_COURSE_ID
-```
-
-响应：
-```json
-{
-  "success": true,
-  "course_id": "YOUR_COURSE_ID",
-  "live": [...],
-  "vod": [...]
-}
-```
-
-#### 手动同步课程
-```bash
-POST /canvas/sync
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID
-}
-```
-
-#### 手动启动直播监听
-```bash
-POST /canvas/live/monitor
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "lecture_id": "xxx"
-}
-```
-
-#### 将 VOD 加入转写队列
-```bash
-POST /canvas/vod/queue
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "video_id": "xxx",
-  "priority": 0
-}
-```
-
-### 队列管理
-
-#### VOD 队列操作
-
-```bash
-# 获取 VOD 队列列表
-GET /queue/vod?course_id=YOUR_COURSE_ID
-
-# 重置 VOD 转写状态
-POST /queue/vod
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "video_id": "xxx",
-  "action": "reset"
-}
-
-# 跳过 VOD 转写
-POST /queue/vod
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "video_id": "xxx",
-  "action": "skip"
-}
-```
-
-#### 直播队列操作
-
-```bash
-# 获取直播队列列表
-GET /queue/live?course_id=YOUR_COURSE_ID
-
-# 手动启动直播监听
-POST /queue/live
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "lecture_id": "xxx",
-  "action": "monitor"
-}
-
-# 停止直播监听
-POST /queue/live
-Content-Type: application/json
-
-{
-  "course_id": YOUR_COURSE_ID,
-  "lecture_id": "xxx",
-  "action": "stop"
-}
-```
-
-### Schedule 管理
-
-```bash
-# 获取所有 Schedule
-GET /schedules?course_id=YOUR_COURSE_ID
-
-# 获取待执行的 Schedule
-GET /schedules/pending
-
-# 取消 Schedule
-POST /schedules/{id}/cancel
-```
-
-### 插件管理
-
-#### 列出可用插件
-```bash
-GET /plugins
-```
-
-#### 上传并注册插件
-```bash
-POST /plugins
-Content-Type: application/json
-
-{
-  "name": "homework_check",
-  "code": "async def run(gateway): gateway.logger.info('Checking...')",
-  "job_type": "basic",
-  "auto_start": true
-}
-```
-
-参数说明：
-- `name`: 插件名称（唯一标识）
-- `code`: Python 代码内容
-- `job_type`: `basic`, `loop`, `queued`
-- `interval`: Loop Job 的间隔秒数
-- `auto_start`: 是否立即启动
-
-## 插件开发
-
-### 最小插件
-
-创建一个最简单的插件：
-
-```python
-async def run(gateway):
-    """必须实现的入口函数"""
-    gateway.logger.info("Hello from plugin!")
-```
-
-### 完整插件示例
-
-```python
-from datetime import datetime
-
-async def run(gateway):
-    """Job 执行入口"""
-    logger = gateway.logger
-    session = gateway.session
-    
-    logger.info("[my_plugin] 开始执行...")
-    
-    # 使用 session 调用 Canvas API
-    # 使用 gateway.run_sync() 执行同步代码
-    # 使用 gateway.job_registry 操作其他 Job
-    
-    logger.info("[my_plugin] 执行完成")
-
-async def setup(gateway):
-    """可选: 插件加载时调用"""
-    gateway.logger.info("[my_plugin] 已加载")
-
-async def teardown(gateway):
-    """可选: 插件卸载时调用"""
-    gateway.logger.info("[my_plugin] 已卸载")
-```
-
-### 上传插件示例
-
-```bash
-curl -X POST http://localhost:8080/plugins \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "daily_report",
-    "code": "async def run(g): g.logger.info('Daily report')",
-    "job_type": "loop",
-    "interval": 86400,
-    "auto_start": true
-  }'
-```
-
-## 配置说明
-
-### 直播监听配置 (`config.py`)
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `keywords` | list | `["签到", "点名", "名字"]` | 关键词检测列表 |
-| `silence_threshold` | float | 0.005 | 静音阈值，低于此值跳过 |
-| `chunk_seconds` | int | 3 | 音频切片长度（秒） |
-| `sample_rate` | int | 16000 | 音频采样率 |
-| `keyword_debounce_seconds` | int | 30 | 关键词告警去抖动时间 |
-| `enable_qr_detection` | bool | False | 是否启用二维码检测 |
-| `qr_debounce_seconds` | int | 60 | 二维码检测去抖动时间 |
-
-### ASR 模型配置
-
-ASR 模型在 `replay_worker.py` 中配置：
-
-```python
-_asr_model = Qwen3ASRModel.from_pretrained(
-    "Qwen/Qwen3-ASR-0.6B",
-    device_map="mps",  # macOS 使用 MPS，Linux 可改为 "cuda" 或 "cpu"
-)
-```
-
-## 数据文件
-
-所有状态数据存储在 `data/` 目录下：
-
-### timetable.json
-存储用户的课程表：
-```json
-{
-  "courses": [
-    {"id": "YOUR_COURSE_ID", "name": "高等数学"}
-  ],
-  "updated_at": "2026-04-03T10:00:00"
-}
-```
-
-### schedules.json
-存储直播调度记录：
-```json
-{
-  "schedules": [
-    {
-      "id": "monitor_start_COURSE_ID_xxx",
-      "type": "monitor_start",
-      "course_id": "YOUR_COURSE_ID",
-      "lecture_id": "xxx",
-      "trigger_at": "2026-04-03T08:50:00",
-      "status": "pending",
-      "metadata": {...}
-    }
-  ]
-}
-```
-
-### video_state.json
-存储视频元数据：
-```json
-{
-  "courses": {
-    "YOUR_COURSE_ID": {
-      "live": [...],
-      "vod": [...]
-    }
-  }
-}
-```
-
-## 转写输出
-
-转写文件输出到 `transcript/` 目录：
-
-### 文件名格式
-- 直播: `yymmdd-HHMM-{课程名}-stream.txt`
-- 回放: `yymmdd-HHMM-{课程名}-replay.txt`
-
-### 文件格式
-```
-# 课程: 高等数学
-# 教师: 张三
-# 开始时间: 2026-04-03T09:00:00
-# 流地址: rtmp://...
-----------------------------------------
-[00:00:03] 同学们好，今天我们讲
-[00:00:06] 请翻到课本第23页
-[00:00:09] 这里有个重要的定理
-...
-```
-
-## 常见问题
-
-### Q: 如何手动触发课程同步？
-```bash
-curl -X POST http://localhost:8080/canvas/sync \
-  -H "Content-Type: application/json" \
-  -d '{"course_id": YOUR_COURSE_ID}'
-```
-
-### Q: 如何查看待执行的 Schedule？
-```bash
-curl "http://localhost:8080/schedules/pending?course_id=YOUR_COURSE_ID"
-```
-
-### Q: 如何重置 VOD 转写状态？
-直接修改 `data/video_state.json` 中对应 VOD 的 `transcribed` 字段为 `false`，或重新启动 Gateway。
-
-### Q: 如何调试 Job？
-查看 `logs/gateway.log` 获取详细日志：
-```bash
-tail -f logs/gateway.log
-```
-
-### Q: Session 过期怎么办？
-Gateway 会自动检查并刷新 Session。如需手动重新登录，删除 `canvas_session.json` 后重启 Gateway。
-
-## 开发计划
-
-### 已完成
-- [x] Gateway 常驻异步调度器
-- [x] 5 种 Job 类型（Basic/Loop/Scheduled/Queued/Plugin）
-- [x] 全自动直播监听与转录
-- [x] VOD 回放转写
-- [x] 关键词实时检测
-- [x] HTTP API 完整支持
-- [x] 插件系统
-- [x] 状态持久化
-
-### 进行中
-- [ ] 多课程并行监控优化
-- [ ] 关键词告警通知（iMessage/邮件/钉钉）
-
-### 待开发
-- [ ] 实时字幕输出（SRT/WebVTT）
-- [ ] 课程摘要自动生成（LLM总结）
-- [ ] 课程内容全文搜索
-- [ ] Prometheus 指标导出
-- [ ] Grafana 监控面板
-
-## 架构设计原则
-
-1. **单一职责**: Job 是最小执行单元，只做一件事
-2. **可组合**: 不同类型的 Job 可以组合使用
-3. **可扩展**: Plugin 系统允许动态添加功能
-4. **可观测**: 所有 Job 状态可查询、可控制
-5. **容错**: 支持重试、失败恢复、手动干预
-
-## 许可证
-
-MIT License
-
-## 相关文档
-
-- [ASR 模型说明](docs/qwen3-asr-model-card.md)
-- [JAccount 登录流程](docs/jaccount-login-pipeline.md)
-- [架构设计](ARCHITECTURE.md)
-- [任务清单](TODO.md)
+测试覆盖模块依赖边界、SQLite 领取防重、暂停/取消/重启、鉴权故障隔离、直播断流/满载/清理、HTTP 控制和真实 ffmpeg 本地处理。架构说明见 [模块边界](docs/architecture.md)。

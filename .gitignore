@@ -1,40 +1,19 @@
-# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 *.egg-info/
-dist/
-build/
-
-# Virtual environments
-venv/
-env/
-ENV/
 .venv/
+.env
+config.toml
+runtime/
+canvas_session.json
+.DS_Store
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Data and logs
+# Legacy/private artifacts must never enter a source release.
 data/
 logs/
 transcripts/
-*.log
-
-# Session files
-canvas_session.json
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Internal docs and agent config (not for public)
-docs/
-AGENTS.md
-.claude/
+assignments/
+slides/
+cache/
+*.sqlite3
+*.sqlite3-*

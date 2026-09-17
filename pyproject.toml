@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autocanvas"
+version = "2.0.0.dev0"
+description = "Independent Canvas acquisition, media, transcription and slide processing"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31", "beautifulsoup4>=4.12", "aiohttp>=3.9"]
+
+[project.optional-dependencies]
+asr = ["numpy", "torch", "qwen-asr"]
+slides = ["numpy", "opencv-python"]
+
+[project.scripts]
+autocanvas = "autocanvas.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["autocanvas*"]
