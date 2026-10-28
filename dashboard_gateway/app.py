@@ -98,12 +98,10 @@ def create_app(config):
     attempts = defaultdict(deque)
     global_attempts = deque()
     login_lock = asyncio.Lock()
-    upstreams = {'homework': config.get('homework_api', 'http://127.0.0.1:8090'),
-                 'canvas': config.get('autocanvas_api', 'http://127.0.0.1:8080')}
-    for target in upstreams.values():
-        u = urlsplit(target)
-        if u.scheme != 'http' or u.hostname not in ('127.0.0.1', 'localhost', '::1') or u.path not in ('', '/'):
-            raise ValueError('内部 API 必须为本机 HTTP 地址')
+    target = config.get('autocanvas_api', 'http://127.0.0.1:8080')
+    u = urlsplit(target)
+    if u.scheme != 'http' or u.hostname not in ('127.0.0.1', 'localhost', '::1') or u.path not in ('', '/'):
+        raise ValueError('内部 API 必须为本机 HTTP 地址')
 
     def identity(request):return request.cookies.get(COOKIE, '')
     def authenticated(request):return sessions.get(identity(request), 0) > time.monotonic()
@@ -181,7 +179,9 @@ def create_app(config):
         return response
 
     async def proxy(request):
-        target = upstreams['homework' if request.path.startswith('/api/homework/') else 'canvas']
+        if any(request.path == prefix or request.path.startswith(prefix + '/')
+               for prefix in ('/api/codex', '/api/homework')):
+            return web.json_response({'error':'接口不存在'}, status=404)
         hop = {'host','cookie','connection','keep-alive','proxy-authenticate','proxy-authorization',
                'te','trailer','transfer-encoding','upgrade','content-length','forwarded','x-forwarded-for','x-forwarded-proto'}
         headers = {k:v for k,v in request.headers.items() if k.lower() not in hop}
@@ -232,12 +232,6 @@ def create_app(config):
     app.router.add_get('/_dashboard/login',login)
     app.router.add_post('/_dashboard/login',login)
     app.router.add_post('/_dashboard/logout',logout)
-    if config.get('codex_config'):
-        from homework_service.web import register
-        register(app, config['codex_config'])
-        async def retired_homework(request):
-            return web.json_response({'error':'旧作业管理入口已移除，请使用 Codex 会话'}, status=410)
-        app.router.add_route('*','/api/homework/{rest:.*}',retired_homework)
     app.router.add_route('*','/api/{rest:.*}',proxy)
     app.router.add_route('*','/health',proxy)
     app.router.add_route('*','/{rest:.*}',static)

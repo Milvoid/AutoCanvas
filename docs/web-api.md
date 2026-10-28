@@ -6,7 +6,7 @@
 
 | 方法 | 路径 | 参数 / 内容 |
 | --- | --- | --- |
-| GET | `/health` | 健康、运行数量、调度是否启动、自动化暂停状态 |
+| GET | `/health` | 健康、运行数量、调度是否启动、自动化暂停状态，以及 ASR 队列、工作进程和后端内存指标 |
 | GET | `/api/courses`, `/api/lectures`, `/api/assignments`, `/api/sync` | 可选 `course_id` 查询参数 |
 | POST | `/api/sync` | 可选 `course_id`，手动同步会刷新课表 |
 | POST | `/api/assignments/sync` | 立即同步作业；空请求或 `{}` 同步全部启用课程，可选 `course_id` 指定单门课程。返回 202 和 `execution_ids`，单门同时保留 `execution_id`；通过 `/api/executions/{id}` 查询结果 |
@@ -53,3 +53,5 @@
 - 只投影正式 `outputs` 下的已发布内容，不混入 samples、pending 或 previous。返回的二维码内容按普通文本处理，不自动请求 URL。
 
 作业自动同步使用独立 `assignment_interval`，默认 1800 秒（30 分钟），按课程保存派发时间；不受视频同步间隔影响。自动化暂停时暂停自动同步，手动请求仍可执行。`GET /api/assignments` 只读取已同步列表。
+
+ASR 设置包含 `asr_backend`（torch/mlx）、`asr_dtype`（auto/float32/float16/bfloat16）和 `asr_idle_seconds`（默认 120 秒）。后端、模型和精度在空闲时切换。模型从本地目录或预先准备的缓存加载；MLX 的量化位宽由模型文件决定。模型进程退出后，健康接口清除对应的进程与内存统计。

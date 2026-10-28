@@ -27,7 +27,7 @@ def create_app(service):
         blocked = sum(r['status'] == 'needs_login' for r in store.executions())
         failed = [t.get_name() for t in service.background if t.done() and not t.cancelled() and t.exception()]
         return web.json_response({'status': 'degraded' if failed else 'needs_login' if blocked else 'ok', 'failed_workers': failed, 'version': 2,
-                                  'scheduler_running': any(t.get_name() == 'automation' and not t.done() for t in service.background), 'active': len(service.active), 'automation': store.get('control','automation', {'paused': False})})
+                                  'scheduler_running': any(t.get_name() == 'automation' and not t.done() for t in service.background), 'active': len(service.active), 'asr': service.inference.snapshot() if hasattr(service, 'inference') else {}, 'automation': store.get('control','automation', {'paused': False})})
 
     async def listing(request):
         collection = request.match_info['collection']

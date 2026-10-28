@@ -27,11 +27,11 @@ from autocanvas.video import Video
 
 class Boundaries(unittest.TestCase):
     def test_imports_are_lightweight(self):
-        code = "import autocanvas.auth, autocanvas.video, autocanvas.asr; import sys; assert 'torch' not in sys.modules; assert 'cv2' not in sys.modules; assert 'autocanvas.storage' not in sys.modules"
+        code = "import autocanvas.auth, autocanvas.video, autocanvas.asr, autocanvas.mlx_asr, autocanvas.asr_worker; import sys; assert 'torch' not in sys.modules; assert 'mlx.core' not in sys.modules; assert 'cv2' not in sys.modules; assert 'autocanvas.storage' not in sys.modules"
         subprocess.run([sys.executable, '-c', code], check=True)
 
     def test_no_reverse_dependencies(self):
-        allowed = {'asr': {'types'}, 'media': {'types'}, 'slides': set(), 'qr': set(), 'classroom_events': set(), 'auth': {'types', '_jaccount', 'automatic_login'},
+        allowed = {'asr': {'types'}, 'mlx_asr': {'types'}, 'media': {'types'}, 'slides': set(), 'qr': set(), 'classroom_events': set(), 'auth': {'types', '_jaccount', 'automatic_login'},
                    'video': {'types'}, 'canvas': {'types'}, '_jaccount': set()}
         for module, imports in allowed.items():
             tree = ast.parse(Path('autocanvas', module+'.py').read_text())

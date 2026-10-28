@@ -29,23 +29,16 @@ const nav = [
 const title = computed(
   () => nav.find((x) => x[0] === route.path)?.[1] || "概览",
 );
-const health = query("health", "/health", 10000),
-  auth = query("auth", "/api/auth/status");
-const connected = ref(false);
+const health = query("health", "/health", 10000);
 let stream: EventSource | undefined;
 let reconnect: ReturnType<typeof setTimeout> | undefined;
 function connect() {
   stream = new EventSource("/api/events");
-  stream.onopen = () => {
-    connected.value = true;
-  };
   stream.onerror = () => {
-    connected.value = false;
     stream?.close();
     reconnect = setTimeout(connect, 3000);
   };
   stream.addEventListener("state", (event) => {
-    connected.value = true;
     const state = JSON.parse((event as MessageEvent).data);
     const previous = cache.getQueryData<any[]>(["executions"]);
     cache.setQueryData(["executions"], state.executions);
@@ -104,18 +97,6 @@ onUnmounted(() => {
               <MaterialIcon class="nav-icon" :name="item[2]" />{{ item[1] }}
             </RouterLink>
           </nav>
-          <div class="connection-state" role="status">
-            <span :class="['dot', connected ? 'online' : '']"></span>
-            {{ connected ? "实时连接已建立" : "正在连接服务…" }}
-          </div>
-          <div class="account-row">
-            <RouterLink to="/auth">{{
-              auth.data.value?.authenticated ? "Canvas 已登录" : "登录 Canvas"
-            }}</RouterLink>
-            <form action="/_dashboard/logout" method="post">
-              <button type="submit" class="text-button">退出登录</button>
-            </form>
-          </div>
         </div>
       </div>
     </aside>

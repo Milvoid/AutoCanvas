@@ -42,7 +42,7 @@ npm run preview
 - SPA 路由回退到 `index.html`。
 - 同域 `/api/*` 和 `/health` 反向代理到 Python 服务，保留原始 Host。
 - SSE 路由 `/api/events` 关闭代理缓冲，并允许长连接。
-- `/api/codex/*` 与 `/_dashboard/*` 代理到现有密码入口（默认 `127.0.0.1:4173`，可设置 `DASHBOARD_API`）。无需单独启动作业服务。作业列表直接读取 `/api/assignments`。
+- `/_dashboard/*` 代理到现有密码入口（默认 `127.0.0.1:4173`，可设置 `DASHBOARD_API`）。作业列表直接读取 `/api/assignments`。
 - 上传请求体上限至少 2 GB。
 
 Python API 默认仅监听本机，WebUI 预览服务仅监听本机并转发 API。当前管理接口面向单用户本地服务，没有独立的管理账号；如需远程访问，应由反向代理提供 HTTPS 和访问认证。Canvas 登录负责学校会话，不是 WebUI 访问控制。
@@ -52,11 +52,10 @@ Python API 默认仅监听本机，WebUI 预览服务仅监听本机并转发 AP
 | 页面 | 能力 |
 | --- | --- |
 | 概览 | 课程、视频、执行统计，调度状态，自动化开关 |
-| 课程 | 按课程组织课次，支持同步、课程规则与手动安排 |
-| 正在运行 | 展示运行中的直播与回放任务，支持直播播放、实时转写和签到状态 |
+| 待执行课程 | 按课程组织执行中、排队中、等待认证、即将开始与待安排的课次；同步、课程规则与手动安排 |
 | 执行记录 | 已结束的执行，按课程 / 状态 / 类型筛选，查看详情、重试及打开产物 |
 | 产物浏览 | 课程资料库、课次目录、Slides 图片墙与键盘翻页、转写时间轴 / 搜索 / 连续阅读、结构化数据面板、作业与附件 |
-| 作业 | Canvas 作业列表与独立 Codex 会话，支持新建、续聊、模型选择和停止执行；由密码网关提供，无需单独启动 Homework 服务 |
+| 作业 | Canvas 作业列表、按作业或课程搜索、截止时间、立即同步及跳转 Canvas |
 | 点名与二维码 | 直播点名关键词和回放二维码记录，课程筛选 / 搜索、时间定位、原图查看与内容复制 |
 | 全部设置 | 全部 Settings 字段，当前值 / 保存值及生效时机 |
 | 登录与鉴权 | jAccount 验证码登录、Cookie 导入、会话检查、清除本地会话 |
@@ -89,4 +88,4 @@ npm run build
 
 ## 密码保护入口（当前部署）
 
-对外入口已改为独立 `dashboard_gateway`，使用项目根目录 `dashboard.yml` 的访问密码。先构建 WebUI，再运行 `python -m dashboard_gateway --config dashboard.yml`。4173 由网关直接托管构建产物并转发两个后端，未登录不加载前端 bundle 或 API。Vite preview 仅用于本机调试，改为 `127.0.0.1:4174`。cloudflared 必须指向 `http://127.0.0.1:4173`，具体说明见 [访问鉴权](../dashboard_gateway/README.md)。
+对外入口已改为独立 `dashboard_gateway`，使用项目根目录 `dashboard.yml` 的访问密码。先构建 WebUI，再运行 `python -m dashboard_gateway --config dashboard.yml`。4173 由网关直接托管构建产物并转发课程后端，未登录不加载前端 bundle 或 API。Vite preview 仅用于本机调试，改为 `127.0.0.1:4174`。cloudflared 必须指向 `http://127.0.0.1:4173`，具体说明见 [访问鉴权](../dashboard_gateway/README.md)。

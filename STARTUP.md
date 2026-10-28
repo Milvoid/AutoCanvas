@@ -265,7 +265,6 @@ port: 4173
 session_hours: 12
 dist: webui/dist                    # WebUI 静态文件目录
 autocanvas_api: http://127.0.0.1:8080  # 后端 API 地址
-homework_api: http://127.0.0.1:8090    # Homework 服务地址（可选）
 ```
 
 ### runtime/auth/credentials.yml

@@ -15,6 +15,14 @@ live_lead_seconds = 600
 live_queue_chunks = 100
 model = "Qwen/Qwen3-ASR-0.6B"
 device = "mps"
+asr_backend = "torch"
+# Apple Silicon low-memory option (install .[asr-mlx] and cache the model first):
+# asr_backend = "mlx"
+# model = "moona3k/mlx-qwen3-asr-0.6b-8bit"
+# Preserve checkpoint precision; float32/float16/bfloat16 are explicit overrides.
+asr_dtype = "auto"
+# Unload the isolated model worker after this many seconds without a chunk.
+asr_idle_seconds = 120
 chunk_seconds = 3.0
 sample_every = 5.0
 keywords = ["签到", "点名", "名字"]

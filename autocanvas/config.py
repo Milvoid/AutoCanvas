@@ -23,6 +23,9 @@ class Settings:
     live_queue_chunks: int = 100
     model: str = 'Qwen/Qwen3-ASR-0.6B'
     device: str = 'mps'
+    asr_backend: str = 'torch'
+    asr_dtype: str = 'auto'
+    asr_idle_seconds: int = 120
     chunk_seconds: float = 3
     sample_every: float = 5
     keywords: list[str] = field(default_factory=lambda: ['签到', '点名', '名字'])
@@ -32,11 +35,15 @@ class Settings:
         for key in ('auto_asr', 'auto_slides', 'auto_live'):
             if type(getattr(self, key)) is not bool:
                 raise ValueError(f'{key}: 必须为布尔值')
-        for key in ('port', 'course_interval', 'sync_interval', 'assignment_interval', 'schedule_interval', 'live_lead_seconds', 'live_queue_chunks', 'keyword_debounce'):
+        for key in ('port', 'course_interval', 'sync_interval', 'assignment_interval', 'schedule_interval', 'live_lead_seconds', 'live_queue_chunks', 'keyword_debounce', 'asr_idle_seconds'):
             value = getattr(self, key)
             minimum = 0 if key in ('live_lead_seconds', 'keyword_debounce') else 1
             if type(value) is not int or not minimum <= value <= (65535 if key == 'port' else 31536000):
                 raise ValueError(f'{key}: 整数超出允许范围')
+        if self.asr_backend not in ('torch', 'mlx'):
+            raise ValueError('asr_backend: 必须为 torch/mlx')
+        if self.asr_dtype not in ('auto', 'float32', 'float16', 'bfloat16'):
+            raise ValueError('asr_dtype: 必须为 auto/float32/float16/bfloat16')
         if self.live_queue_chunks > 10000:
             raise ValueError('live_queue_chunks: 最大为 10000')
         for key in ('chunk_seconds', 'sample_every'):

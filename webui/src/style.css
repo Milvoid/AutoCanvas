@@ -115,36 +115,6 @@ a {
   margin-top: auto;
   padding-top: 12px;
 }
-.connection-state {
-  margin: 24px 12px 12px;
-  color: var(--ochrelune-text-muted);
-  font-size: 12px;
-}
-.account-row {
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  padding: 0 12px;
-  font-size: 12px;
-}
-.account-row a,
-.account-row .text-button {
-  color: var(--ochrelune-text-secondary);
-}
-.account-row .text-button {
-  padding: 0;
-}
-.dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-right: 7px;
-  background: var(--ochrelune-warning);
-}
-.dot.online {
-  background: var(--ochrelune-success);
-}
 .app-main {
   margin-left: var(--app-sidebar-width);
 }
@@ -1519,12 +1489,6 @@ p.failure-hint {
   }
   .sidebar-bottom {
     margin: 0;
-    padding: 0;
-  }
-  .connection-state {
-    margin: 12px 0;
-  }
-  .account-row {
     padding: 0;
   }
   .app-main {

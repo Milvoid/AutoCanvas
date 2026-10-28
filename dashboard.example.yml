@@ -5,4 +5,3 @@ port: 4173
 session_hours: 12
 dist: webui/dist
 autocanvas_api: http://127.0.0.1:8080
-homework_api: http://127.0.0.1:8090

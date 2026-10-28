@@ -15,8 +15,9 @@ async def blocking(function, *args, **kwargs):
 
 class Inference:
     """Serial model access; live chunks precede queued replay chunks."""
-    def __init__(self, recognize):
+    def __init__(self, recognize, *, idle_seconds=120):
         self.recognize = recognize
+        self.idle_seconds = idle_seconds
         self.queue = asyncio.PriorityQueue()
         self.sequence = itertools.count()
         self.worker = None
@@ -31,7 +32,11 @@ class Inference:
 
     async def _consume(self):
         while True:
-            _, _, chunk, future = await self.queue.get()
+            try:
+                _, _, chunk, future = await asyncio.wait_for(self.queue.get(), self.idle_seconds)
+            except asyncio.TimeoutError:
+                await self.release()
+                continue
             try:
                 if future.cancelled():
                     continue
@@ -39,12 +44,27 @@ class Inference:
                 result = await blocking(self.recognize, chunk)
                 if not future.done():
                     future.set_result(result)
+            except asyncio.CancelledError:
+                future.cancel()
+                raise
             except Exception as error:
                 if not future.done():
                     future.set_exception(error)
             finally:
                 self.busy = False
                 self.queue.task_done()
+
+    async def release(self):
+        owner = getattr(self.recognize, '__self__', None)
+        close = getattr(owner, 'close', None)
+        if close is not None:
+            await blocking(close)
+
+    def snapshot(self):
+        owner = getattr(self.recognize, '__self__', None)
+        snapshot = getattr(owner, 'snapshot', None)
+        return {'busy': self.busy, 'queued': self.queue.qsize(),
+                'idle_seconds': self.idle_seconds, **(snapshot() if snapshot else {})}
 
     async def close(self):
         if self.worker:
@@ -55,3 +75,4 @@ class Inference:
             *_, future = self.queue.get_nowait()
             future.cancel()
             self.queue.task_done()
+        await self.release()

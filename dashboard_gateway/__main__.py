@@ -13,7 +13,6 @@ def main():
     settings = yaml.safe_load(path.read_text())
     if not isinstance(settings, dict):raise ValueError('需要 dashboard.yml 配置')
     settings['dist'] = str((path.parent/settings.get('dist', 'webui/dist')).resolve())
-    settings['codex_config'] = str(path.parent/'homework.yml')
     web.run_app(create_app(settings), host=settings.get('host', '127.0.0.1'),
                 port=settings.get('port', 4173), access_log=None, shutdown_timeout=5)
 

@@ -70,13 +70,13 @@ async def main_async(args, settings):
         return
     if args.command in ('transcribe', 'slides'):
         from .flows import transcribe_source, slides_source
-        from .asr import Recognizer
+        from .asr_worker import ProcessRecognizer
         from .execution import Inference
         if args.duration is not None and args.duration <= 0:
             raise ValueError('duration must be positive')
         source = MediaSource(args.source)
         if args.command == 'transcribe':
-            inference = Inference(Recognizer(settings.model, settings.device).transcribe)
+            inference = Inference(ProcessRecognizer(settings.model, settings.device, dtype=settings.asr_dtype, backend=settings.asr_backend).transcribe, idle_seconds=settings.asr_idle_seconds)
             try:
                 output = await transcribe_source(source, inference.transcribe, args.output, chunk_seconds=settings.chunk_seconds, duration=args.duration)
             finally:

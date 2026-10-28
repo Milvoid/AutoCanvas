@@ -5,7 +5,7 @@ from .auth import Auth
 from .canvas import Canvas
 from .video import Video
 from .storage import Store
-from .asr import Recognizer
+from .asr_worker import ProcessRecognizer
 from .execution import Inference, blocking
 from .flows import CatalogSync, AssignmentSync, Replay
 from .live import LiveMonitor
@@ -46,7 +46,7 @@ def build(settings):
     store = Store(settings.root/'state.sqlite3')
     catalog = CatalogSync(canvas, lambda course: Video(auth.video(course)), store, settings.course_ids)
     assignments = AssignmentSync(canvas, auth.session, store, settings.root/'assignments')
-    inference = Inference(Recognizer(settings.model, settings.device).transcribe)
+    inference = Inference(ProcessRecognizer(settings.model, settings.device, dtype=settings.asr_dtype, backend=settings.asr_backend).transcribe, idle_seconds=settings.asr_idle_seconds)
 
     async def resolve(lecture):
         return await blocking(catalog.sources, lecture)
@@ -55,12 +55,15 @@ def build(settings):
     monitor = LiveMonitor(resolve, inference.transcribe, queue_chunks=settings.live_queue_chunks, chunk_seconds=settings.chunk_seconds,
                           keywords=settings.keywords, debounce=settings.keyword_debounce)
     service = Service(settings, store, catalog, assignments, replay, monitor)
+    service.inference = inference
     from .configuration import Configuration
     from .browser_auth import BrowserAuth
 
     def apply_idle(values, changed):
-        if changed & {'model', 'device'}:
-            inference.recognize = Recognizer(values['model'], values['device']).transcribe
+        if changed & {'model', 'device', 'asr_dtype', 'asr_backend'}:
+            inference.recognize.__self__.close()
+            inference.recognize = ProcessRecognizer(values['model'], values['device'], dtype=values['asr_dtype'], backend=values['asr_backend']).transcribe
+        inference.idle_seconds = values['asr_idle_seconds']
         replay.chunk_seconds, replay.sample_every = values['chunk_seconds'], values['sample_every']
         service.monitor = LiveMonitor(resolve, inference.transcribe, queue_chunks=values['live_queue_chunks'],
                                       chunk_seconds=values['chunk_seconds'], keywords=values['keywords'], debounce=values['keyword_debounce'])
