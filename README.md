@@ -1,8 +1,6 @@
 # AutoCanvas V2
 
-新版 Canvas 视频接入、独立本地转写与 Slides 抽取，以及外层自动化控制。
-
-登录鉴权、Canvas 数据查询、视频地址解析、媒体读取、ASR、Slides 各自独立。没有插件加载、Gateway 或 Job 注册机制。ASR 不知道视频 URL，Slides 不知道课程 ID，功能模块不访问执行数据库。
+新版 Canvas 视频接入、独立本地转写与关键帧识别，以及外层自动化控制。
 
 ## 环境与启动
 
